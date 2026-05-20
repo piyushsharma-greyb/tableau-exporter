@@ -400,9 +400,21 @@ const COLORS = ['4f7cff','22c55e','f59e0b','a855f7','ec4899','14b8a6','f97316','
 
 // ─── Init ────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  // Check if SDK even loaded
+  if (typeof tableau === 'undefined') {
+    setStatus('error', 'Tableau SDK failed to load — check network/console');
+    return;
+  }
+
   tableau.extensions.initializeAsync()
     .then(onInit)
-    .catch(err => setStatus('error', 'Failed to connect: ' + err.message));
+    .catch(err => {
+      setStatus('error', 'Init failed: ' + err.message);
+      // Also log full error
+      log('ERROR: ' + JSON.stringify(err), 'err');
+      log('Stack: ' + err.stack, 'err');
+      document.getElementById('logBox').classList.add('active');
+    });
 });
 
 function onInit() {
