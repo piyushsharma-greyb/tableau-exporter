@@ -5,138 +5,69 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dashboard Exporter</title>
 
-  <!-- Tableau Extensions API — must be downloaded and placed alongside this file -->
-  <!-- Download raw JS from: https://github.com/tableau/extensions-api/blob/main/lib/tableau.extensions.1.latest.js -->
   <script src="tableau.extensions.1.latest.js"></script>
-
-  <!-- SheetJS for Excel export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #f5f5f5;
-      color: #222;
-      padding: 16px;
-      font-size: 14px;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      height: 100vh;
     }
-    h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: #111; }
-
-    #status {
-      background: #fff; border: 1px solid #ddd; border-radius: 6px;
-      padding: 10px 14px; margin-bottom: 12px; color: #555; font-size: 13px;
-    }
-    #status.ok    { border-color: #4caf50; color: #2e7d32; background: #f1faf2; }
-    #status.error { border-color: #f44336; color: #c62828; background: #fff5f5; }
-
-    #ws-list {
-      background: #fff; border: 1px solid #ddd; border-radius: 6px;
-      margin-bottom: 12px; overflow: hidden; display: none;
-    }
-    .ws-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 14px; border-bottom: 1px solid #f0f0f0; font-size: 13px;
-    }
-    .ws-row:last-child { border-bottom: none; }
-    .ws-name { color: #333; }
-    .ws-tag  { font-size: 10px; padding: 2px 6px; border-radius: 3px; margin-left: 6px; }
-    .ws-tag.skip { background: #f0f0f0; color: #999; }
-    .ws-tag.data { background: #e3f2fd; color: #1565c0; }
-    .ws-state { font-size: 11px; color: #999; }
-    .ws-state.done { color: #4caf50; }
-    .ws-state.err  { color: #f44336; }
-    .ws-state.busy { color: #ff9800; }
-
-    #progress-wrap { height: 4px; background: #e0e0e0; border-radius: 2px; margin-bottom: 12px; display: none; }
-    #progress-bar  { height: 100%; width: 0%; background: #1976d2; border-radius: 2px; transition: width 0.25s ease; }
 
     #export-btn {
-      width: 100%; padding: 11px; background: #1976d2; color: #fff;
-      border: none; border-radius: 6px; font-size: 14px; font-weight: 600;
-      cursor: pointer; transition: background 0.15s;
+      padding: 8px 20px;
+      background: #1976d2;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
     }
     #export-btn:hover:not(:disabled) { background: #1565c0; }
-    #export-btn:disabled { background: #bdbdbd; cursor: not-allowed; }
+    #export-btn:disabled { background: #90a4ae; cursor: not-allowed; }
 
-    #log { margin-top: 10px; font-size: 11px; color: #888; font-family: monospace; line-height: 1.8; display: none; }
-    #log.show { display: block; }
-    .log-ok  { color: #4caf50; }
-    .log-err { color: #f44336; }
-    .log-info{ color: #1976d2; }
+    #msg {
+      margin-left: 10px;
+      font-size: 12px;
+      color: #555;
+      display: none;
+    }
+    #msg.ok    { color: #2e7d32; display: inline; }
+    #msg.error { color: #c62828; display: inline; }
+    #msg.info  { color: #1565c0; display: inline; }
   </style>
 </head>
 <body>
 
-<h2>📊 Dashboard Exporter</h2>
-<div id="status">Connecting to Tableau…</div>
-<div id="ws-list"></div>
-<div id="progress-wrap"><div id="progress-bar"></div></div>
-<button id="export-btn" disabled onclick="runExport()">Export to Excel</button>
-<div id="log"></div>
+  <button id="export-btn" disabled onclick="runExport()">Export to Excel</button>
+  <span id="msg"></span>
 
 <script>
 'use strict';
 
-// ─── State ─────────────────────────────────────────────────────────────────
-let worksheets   = [];
+let worksheets    = [];
 let dashboardName = '';
 
-// ─── DOM ───────────────────────────────────────────────────────────────────
-const statusEl      = document.getElementById('status');
-const wsListEl      = document.getElementById('ws-list');
-const progressWrap  = document.getElementById('progress-wrap');
-const progressBar   = document.getElementById('progress-bar');
-const exportBtn     = document.getElementById('export-btn');
-const logEl         = document.getElementById('log');
+const exportBtn = document.getElementById('export-btn');
+const msgEl     = document.getElementById('msg');
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
-function setStatus(msg, type) { statusEl.textContent = msg; statusEl.className = type || ''; }
-function setProgress(p)       { progressBar.style.width = p + '%'; }
-function clearLog()           { logEl.innerHTML = ''; logEl.classList.remove('show'); }
-
-function log(msg, type) {
-  logEl.classList.add('show');
-  const d = document.createElement('div');
-  if (type) d.className = 'log-' + type;
-  d.textContent = '› ' + msg;
-  logEl.appendChild(d);
-  logEl.scrollTop = logEl.scrollHeight;
+function setMsg(text, type) {
+  msgEl.className = type || '';
+  msgEl.textContent = text;
+  if (text) msgEl.style.display = 'inline'; else msgEl.style.display = 'none';
 }
 
-function setWsState(i, state, label) {
-  const el = document.getElementById('ws-state-' + i);
-  if (!el) return;
-  el.className = 'ws-state ' + (state || '');
-  el.textContent = label || '';
-}
-
-// ─── GROUP DETECTION ───────────────────────────────────────────────────────
-//
-// Worksheets from Tableau come in groups separated by "header" sheets:
-//   Header       → defines "Claim Type"    group  (col headers: claimType, claim sub-fields)
-//   Packheader   → defines "Packaging Type" group
-//   Ingr Header  → defines "Ingredient Type" group
-//   Dosage header→ defines "Dosage Type"   group
-//
-// After each header sheet come N data sheets whose NAME becomes the
-// "Type" column value in the merged table.
-//
-// Detection: a sheet is a HEADER if its name matches one of these patterns
-// (case-insensitive):  /header/  OR exact known names.
-//
-// We also map the header name → the 4 column labels for that group:
-//   col0 = "Product Name"   (always — it's the first data column)
-//   col1 = groupTypeLabel   (e.g. "Claim Type")
-//   col2 = groupFieldLabel  (e.g. "Claim")
-//   col3 = "Values"         (always last)
-//
-// The raw data worksheets have 3 columns: [product, subField, value]
-// We inject col1 = worksheetName as the "Type" column to get 4 columns.
-
+// ─── Header sheet detection (same logic as before) ──────────────────────────
 const HEADER_MAP = {
-  // key: lowercased worksheet name (or partial match)
-  // value: [tableTitle, col1Label, col2Label]
   'header'       : ['Claim Type',      'Claim Type',      'Claim'],
   'packheader'   : ['Packaging Type',  'Packaging Type',  'Packaging'],
   'ingr header'  : ['Ingredient Type', 'Ingredient Type', 'Ingredient'],
@@ -145,61 +76,39 @@ const HEADER_MAP = {
 
 function detectHeader(wsName) {
   const lo = wsName.toLowerCase().trim();
-  // Exact match first
   if (HEADER_MAP[lo]) return HEADER_MAP[lo];
-  // Partial: if the name contains "header" (catches "Dosage header ", "Ingr Header", etc.)
   for (const key of Object.keys(HEADER_MAP)) {
     if (lo.includes(key) || key.includes(lo)) return HEADER_MAP[key];
   }
-  return null; // not a header sheet
+  return null;
 }
 
-// ─── INIT ──────────────────────────────────────────────────────────────────
+// ─── Skip non-data sheets (Reset 1/2/3, FS 1/2/3, etc.) ───────────────────
+// Any sheet whose name starts with "Reset" or "FS" (case-insensitive) is skipped.
+function shouldSkip(wsName) {
+  const lo = wsName.toLowerCase().trim();
+  return lo.startsWith('reset') || lo.startsWith('fs ') || lo === 'fs';
+}
+
+// ─── Init ──────────────────────────────────────────────────────────────────
 window.onload = function () {
   if (typeof tableau === 'undefined') {
-    setStatus('ERROR: tableau.extensions SDK not loaded. Place tableau.extensions.1.latest.js next to index.html.', 'error');
+    setMsg('SDK not loaded', 'error');
     return;
   }
-
   tableau.extensions.initializeAsync().then(function () {
-    const db     = tableau.extensions.dashboardContent.dashboard;
+    const db      = tableau.extensions.dashboardContent.dashboard;
     dashboardName = db.name;
-    worksheets   = db.worksheets;
-
-    if (!worksheets || worksheets.length === 0) {
-      setStatus('No worksheets found on this dashboard.', 'error');
-      return;
-    }
-
-    setStatus('Ready · ' + dashboardName + ' · ' + worksheets.length + ' sheets', 'ok');
-
-    // Render worksheet list with skip/data tags
-    wsListEl.style.display = 'block';
-    worksheets.forEach(function (ws, i) {
-      const isHeader = detectHeader(ws.name) !== null;
-      const row = document.createElement('div');
-      row.className = 'ws-row';
-      row.innerHTML =
-        '<span class="ws-name">' + ws.name +
-        '<span class="ws-tag ' + (isHeader ? 'skip' : 'data') + '">' +
-        (isHeader ? 'header (skip)' : 'data') + '</span></span>' +
-        '<span class="ws-state" id="ws-state-' + i + '">waiting</span>';
-      wsListEl.appendChild(row);
-    });
-
+    worksheets    = db.worksheets;
     exportBtn.disabled = false;
-
   }, function (err) {
-    setStatus('Init failed: ' + (err && err.message ? err.message : String(err)), 'error');
-    log('Full error: ' + JSON.stringify(err), 'err');
-    logEl.classList.add('show');
+    setMsg('Init failed: ' + (err && err.message ? err.message : String(err)), 'error');
   });
 };
 
-// ─── READ ONE WORKSHEET (paginated) ────────────────────────────────────────
+// ─── Fetch all rows from a worksheet (paginated) ───────────────────────────
 async function fetchAllRows(ws) {
   const reader = await ws.getSummaryDataReaderAsync();
-  const columns = reader.columns || [];
   const allRows = [];
   try {
     for (let p = 0; p < reader.pageCount; p++) {
@@ -217,203 +126,128 @@ async function fetchAllRows(ws) {
   } finally {
     await reader.releaseAsync();
   }
-  return { columns, rows: allRows };
+  return allRows;
 }
 
-// ─── CELL HELPERS ──────────────────────────────────────────────────────────
-function addr(r, c) { return XLSX.utils.encode_cell({ r: r, c: c }); }
-
-function writeCell(sheet, r, c, value, style) {
-  const a = addr(r, c);
-  const t = typeof value === 'number' ? 'n' : 's';
-  sheet[a] = { t: t, v: value == null ? '' : value };
-  if (style) sheet[a].s = style;
-}
-
-// ─── EXPORT ────────────────────────────────────────────────────────────────
+// ─── Export ────────────────────────────────────────────────────────────────
 async function runExport() {
   exportBtn.disabled = true;
   exportBtn.textContent = 'Exporting…';
-  clearLog();
-  progressWrap.style.display = 'block';
-  setProgress(0);
+  setMsg('', '');
 
-  // ── Group worksheets into sections ───────────────────────────────────────
-  // Each section = { meta: [tableTitle, col1Label, col2Label], sheets: [{wsIndex, wsName}] }
-  const sections = [];
-  let currentSection = null;
+  try {
+    // Group worksheets into sections
+    const sections = [];
+    let current = null;
 
-  worksheets.forEach(function (ws, i) {
-    const headerMeta = detectHeader(ws.name);
-    if (headerMeta) {
-      // Start a new section
-      currentSection = { meta: headerMeta, sheets: [] };
-      sections.push(currentSection);
-      log('Section detected: ' + headerMeta[0], 'info');
-    } else if (currentSection) {
-      currentSection.sheets.push({ index: i, name: ws.name });
-    } else {
-      // Sheets before any header — create a default section
-      currentSection = { meta: ['Data', 'Type', 'Field'], sheets: [] };
-      sections.push(currentSection);
-      currentSection.sheets.push({ index: i, name: ws.name });
-    }
-  });
+    worksheets.forEach(function (ws) {
+      if (shouldSkip(ws.name)) return; // skip Reset/FS sheets entirely
 
-  if (sections.length === 0) {
-    // No header sheets detected — fall back: export everything as one flat table
-    sections.push({
-      meta: ['Data', 'Type', 'Field'],
-      sheets: worksheets.map(function (ws, i) { return { index: i, name: ws.name }; })
+      const headerMeta = detectHeader(ws.name);
+      if (headerMeta) {
+        current = { meta: headerMeta, sheets: [] };
+        sections.push(current);
+      } else if (current) {
+        current.sheets.push(ws);
+      } else {
+        current = { meta: ['Data', 'Type', 'Field'], sheets: [ws] };
+        sections.push(current);
+      }
     });
-  }
 
-  // ── Build the single sheet AOA + style map ────────────────────────────────
-  const aoa      = [];  // array of arrays (cell values)
-  const styleMap = [];  // parallel array of style metadata per row
+    const aoa      = [];
+    const styleMap = [];
 
-  const TITLE_COLORS = ['1F4E79', '375623', '7B2C2C', '3E3072'];
-  const HDR_FILLS    = ['D6E4F0', 'E2EFDA', 'FCE4D6', 'EDE7F6'];
+    const TITLE_COLORS = ['1F4E79', '375623', '7B2C2C', '3E3072'];
+    const HDR_FILLS    = ['D6E4F0', 'E2EFDA', 'FCE4D6', 'EDE7F6'];
 
-  const totalSheets = sections.reduce(function (n, s) { return n + s.sheets.length; }, 0);
-  let   doneSheets  = 0;
+    for (let si = 0; si < sections.length; si++) {
+      const section    = sections[si];
+      const titleColor = TITLE_COLORS[si % TITLE_COLORS.length];
+      const hdrFill    = HDR_FILLS[si % HDR_FILLS.length];
+      const [tableTitle, col1Label, col2Label] = section.meta;
 
-  for (let si = 0; si < sections.length; si++) {
-    const section   = sections[si];
-    const titleColor = TITLE_COLORS[si % TITLE_COLORS.length];
-    const hdrFill    = HDR_FILLS[si % HDR_FILLS.length];
-    const [tableTitle, col1Label, col2Label] = section.meta;
+      if (aoa.length > 0) {
+        aoa.push([]); styleMap.push({ type: 'spacer' });
+        aoa.push([]); styleMap.push({ type: 'spacer' });
+      }
 
-    // Blank spacer between sections (not before first)
-    if (aoa.length > 0) {
-      aoa.push([]); styleMap.push({ type: 'spacer' });
-      aoa.push([]); styleMap.push({ type: 'spacer' });
-    }
+      aoa.push([tableTitle]);
+      styleMap.push({ type: 'title', color: titleColor, colCount: 4 });
 
-    // ── TABLE TITLE ROW ────────────────────────────────────────────────────
-    aoa.push([tableTitle]);
-    styleMap.push({ type: 'title', color: titleColor, colCount: 4 });
+      aoa.push(['Product Name', col1Label, col2Label, 'Values']);
+      styleMap.push({ type: 'colHeader', fill: hdrFill, colCount: 4 });
 
-    // ── COLUMN HEADER ROW ─────────────────────────────────────────────────
-    aoa.push(['Product Name', col1Label, col2Label, 'Values']);
-    styleMap.push({ type: 'colHeader', fill: hdrFill, colCount: 4 });
-
-    // ── DATA ROWS (all sheets in this section stacked) ────────────────────
-    for (const sheetRef of section.sheets) {
-      const ws = worksheets[sheetRef.index];
-      const wsTypeName = sheetRef.name;  // this becomes col1 value
-      setWsState(sheetRef.index, 'busy', 'fetching…');
-      log('Fetching: ' + ws.name, 'info');
-
-      try {
-        const { rows } = await fetchAllRows(ws);
-
+      for (const ws of section.sheets) {
+        const rows = await fetchAllRows(ws);
         for (const row of rows) {
-          // Raw row from Tableau: [product, subField, value]  (3 cols)
-          // We insert wsTypeName as col[1], so final = [product, wsTypeName, subField, value]
           const product  = row[0] !== undefined ? row[0] : '';
           const subField = row[1] !== undefined ? row[1] : '';
           const value    = row[2] !== undefined ? row[2] : '';
-          aoa.push([product, wsTypeName, subField, value]);
+          aoa.push([product, ws.name, subField, value]);
           styleMap.push({ type: 'data' });
         }
-
-        doneSheets++;
-        setWsState(sheetRef.index, 'done', rows.length + ' rows');
-        log('✓ ' + ws.name + ' — ' + rows.length + ' rows', 'ok');
-
-      } catch (e) {
-        setWsState(sheetRef.index, 'err', 'error');
-        log('✗ ' + ws.name + ' — ' + e.message, 'err');
-        aoa.push([ws.name + ' — ERROR: ' + e.message, '', '', '']);
-        styleMap.push({ type: 'data' });
-        doneSheets++;
       }
-
-      setProgress(Math.round((doneSheets / totalSheets) * 88));
     }
-  }
 
-  // ── Build SheetJS worksheet ───────────────────────────────────────────────
-  log('Building Excel…', 'info');
-  setProgress(90);
+    // Build sheet
+    const xlSheet = XLSX.utils.aoa_to_sheet(aoa);
 
-  const xlSheet = XLSX.utils.aoa_to_sheet(aoa);
+    styleMap.forEach(function (meta, r) {
+      const cols = meta.colCount || 4;
+      function a(c) { return XLSX.utils.encode_cell({ r: r, c: c }); }
 
-  // Apply styles row by row
-  styleMap.forEach(function (meta, r) {
-    const cols = meta.colCount || 4;
-
-    if (meta.type === 'title') {
-      // Merge across 4 columns
-      if (!xlSheet['!merges']) xlSheet['!merges'] = [];
-      xlSheet['!merges'].push({ s: { r: r, c: 0 }, e: { r: r, c: cols - 1 } });
-      const a = addr(r, 0);
-      if (!xlSheet[a]) xlSheet[a] = { t: 's', v: '' };
-      xlSheet[a].s = {
-        font:      { bold: true, sz: 12, color: { rgb: 'FFFFFF' } },
-        fill:      { patternType: 'solid', fgColor: { rgb: meta.color } },
-        alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
-      };
-
-    } else if (meta.type === 'colHeader') {
-      for (let c = 0; c < cols; c++) {
-        const a = addr(r, c);
-        if (!xlSheet[a]) xlSheet[a] = { t: 's', v: '' };
-        xlSheet[a].s = {
-          font:      { bold: true, sz: 10 },
-          fill:      { patternType: 'solid', fgColor: { rgb: meta.fill } },
-          alignment: { horizontal: 'left' },
-          border:    { bottom: { style: 'thin', color: { rgb: '888888' } } }
+      if (meta.type === 'title') {
+        if (!xlSheet['!merges']) xlSheet['!merges'] = [];
+        xlSheet['!merges'].push({ s: { r: r, c: 0 }, e: { r: r, c: cols - 1 } });
+        const cell = a(0);
+        if (!xlSheet[cell]) xlSheet[cell] = { t: 's', v: '' };
+        xlSheet[cell].s = {
+          font: { bold: true, sz: 12, color: { rgb: 'FFFFFF' } },
+          fill: { patternType: 'solid', fgColor: { rgb: meta.color } },
+          alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
         };
-      }
-
-    } else if (meta.type === 'data') {
-      // Alternate row shading for readability
-      const shade = (r % 2 === 0);
-      for (let c = 0; c < 4; c++) {
-        const a = addr(r, c);
-        if (xlSheet[a]) {
-          xlSheet[a].s = {
-            font:      { sz: 10 },
-            fill:      shade ? { patternType: 'solid', fgColor: { rgb: 'FAFAFA' } } : { patternType: 'none' },
-            alignment: { wrapText: true, vertical: 'top' }
+      } else if (meta.type === 'colHeader') {
+        for (let c = 0; c < cols; c++) {
+          const cell = a(c);
+          if (!xlSheet[cell]) xlSheet[cell] = { t: 's', v: '' };
+          xlSheet[cell].s = {
+            font: { bold: true, sz: 10 },
+            fill: { patternType: 'solid', fgColor: { rgb: meta.fill } },
+            alignment: { horizontal: 'left' },
+            border: { bottom: { style: 'thin', color: { rgb: '888888' } } }
           };
         }
+      } else if (meta.type === 'data') {
+        for (let c = 0; c < 4; c++) {
+          const cell = a(c);
+          if (xlSheet[cell]) {
+            xlSheet[cell].s = {
+              font: { sz: 10 },
+              alignment: { wrapText: true, vertical: 'top' }
+            };
+          }
+        }
       }
-    }
-  });
+    });
 
-  // ── Column widths ─────────────────────────────────────────────────────────
-  // Fixed widths for the 4 known columns:
-  // Col 0: Product Name (~30), Col 1: Type (~15), Col 2: Field (~25), Col 3: Values (~60)
-  xlSheet['!cols'] = [
-    { wch: 32 },  // Product Name
-    { wch: 16 },  // Claim/Packaging/Ingredient/Dosage Type
-    { wch: 28 },  // Claim/Packaging/Ingredient/Dosage field name
-    { wch: 65 },  // Values (long text)
-  ];
+    xlSheet['!cols'] = [{ wch: 32 }, { wch: 16 }, { wch: 28 }, { wch: 65 }];
+    xlSheet['!rows'] = styleMap.map(function (m) {
+      return { hpt: m.type === 'title' ? 22 : m.type === 'colHeader' ? 18 : 15 };
+    });
 
-  // ── Row heights ───────────────────────────────────────────────────────────
-  xlSheet['!rows'] = styleMap.map(function (m) {
-    if (m.type === 'title')     return { hpt: 22 };
-    if (m.type === 'colHeader') return { hpt: 18 };
-    return { hpt: 15 };
-  });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, xlSheet, 'Dashboard Data');
 
-  // ── Write workbook ────────────────────────────────────────────────────────
-  setProgress(96);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, xlSheet, 'Dashboard Data');
+    // Clean filename — strip special chars, append .xlsx explicitly
+    const safeName = dashboardName.replace(/[^a-z0-9_\-]/gi, '_');
+    XLSX.writeFile(wb, safeName + '.xlsx', { bookType: 'xlsx' });
 
-  const filename = dashboardName.replace(/[^a-z0-9_\-]/gi, '_') + '_export.xlsx';
+    setMsg('Exported!', 'ok');
 
-  // writeFile with bookType explicit to ensure .xlsx MIME type
-  XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary' });
-
-  setProgress(100);
-  log('✓ Downloaded: ' + filename, 'ok');
-  setStatus('Done · ' + filename, 'ok');
+  } catch (err) {
+    setMsg('Error: ' + err.message, 'error');
+  }
 
   exportBtn.disabled = false;
   exportBtn.textContent = 'Export to Excel';
