@@ -3,737 +3,364 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard Excel Exporter</title>
+  <title>Dashboard Exporter</title>
 
-  <script src="https://extensions.tableau.com/lib/1.latest/tableau.extensions.1.latest.js"></script>
+  <!-- Tableau Extensions API — hosted locally in your repo alongside this file -->
+  <!-- Download from: https://github.com/tableau/extensions-api/blob/main/lib/tableau.extensions.1.latest.js -->
+  <script src="tableau.extensions.1.latest.js"></script>
+
+  <!-- SheetJS for Excel export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
-
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
-      --bg: #0f1117;
-      --surface: #1a1d27;
-      --surface2: #22263a;
-      --border: #2e3350;
-      --accent: #4f7cff;
-      --accent-glow: rgba(79,124,255,0.25);
-      --success: #22c55e;
-      --warning: #f59e0b;
-      --error: #ef4444;
-      --text: #e8eaf6;
-      --text-muted: #8892b0;
-      --text-dim: #4a5580;
-    }
-
     body {
-      font-family: 'DM Sans', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f5;
+      color: #222;
+      padding: 16px;
+      font-size: 14px;
     }
 
-    .header {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      padding: 14px 20px;
+    h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #111;
+    }
+
+    #status {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      color: #555;
+      font-size: 13px;
+    }
+    #status.ok    { border-color: #4caf50; color: #2e7d32; background: #f1faf2; }
+    #status.error { border-color: #f44336; color: #c62828; background: #fff5f5; }
+
+    #ws-list {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      display: none;
+    }
+    .ws-row {
       display: flex;
       align-items: center;
-      gap: 12px;
-      position: sticky;
-      top: 0;
-      z-index: 50;
+      justify-content: space-between;
+      padding: 8px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 13px;
+    }
+    .ws-row:last-child { border-bottom: none; }
+    .ws-name { color: #333; }
+    .ws-state { font-size: 11px; color: #999; }
+    .ws-state.done { color: #4caf50; }
+    .ws-state.err  { color: #f44336; }
+    .ws-state.busy { color: #ff9800; }
+
+    #progress-wrap {
+      height: 4px;
+      background: #e0e0e0;
+      border-radius: 2px;
+      margin-bottom: 12px;
+      display: none;
+    }
+    #progress-bar {
+      height: 100%;
+      width: 0%;
+      background: #1976d2;
+      border-radius: 2px;
+      transition: width 0.25s ease;
     }
 
-    .header-icon {
-      width: 36px; height: 36px;
-      background: linear-gradient(135deg, var(--accent), #7c3aed);
-      border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; flex-shrink: 0;
-      box-shadow: 0 0 16px var(--accent-glow);
-    }
-
-    .header-text h1 { font-size: 14px; font-weight: 700; }
-    .header-text p  { font-size: 11px; color: var(--text-muted); font-family: 'DM Mono', monospace; margin-top: 1px; }
-
-    .content { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
-
-    /* Status */
-    .status-banner {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 10px; padding: 12px 14px;
-      display: flex; align-items: center; gap: 10px;
-    }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--text-dim); }
-    .status-dot.loading { background: var(--warning); animation: pulse 1.2s ease-in-out infinite; }
-    .status-dot.ready   { background: var(--success); }
-    .status-dot.error   { background: var(--error); }
-    @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
-    .status-text { font-size: 13px; color: var(--text-muted); }
-    .status-text strong { color: var(--text); font-weight: 600; }
-
-    /* Section label */
-    .section-label {
-      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;
-    }
-
-    /* Single-sheet preview diagram */
-    .preview-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 10px; padding: 14px; overflow: hidden;
-    }
-
-    .preview-sheet {
-      background: #fff; border-radius: 6px; overflow: hidden;
-      border: 1px solid #d0d7de; font-family: 'DM Mono', monospace;
-      font-size: 10px;
-    }
-
-    .preview-tab-bar {
-      display: flex; background: #f0f2f5; border-bottom: 1px solid #d0d7de;
-    }
-
-    .preview-tab {
-      padding: 4px 12px; font-size: 10px; color: #57606a;
-      border-right: 1px solid #d0d7de;
-    }
-
-    .preview-tab.active {
-      background: #fff; color: #24292f; font-weight: 600;
-      border-bottom: 2px solid var(--accent); margin-bottom: -1px;
-    }
-
-    .preview-section-header {
-      display: flex; align-items: center; gap: 6px;
-      padding: 5px 8px; font-weight: 700; font-size: 10px;
+    #export-btn {
+      width: 100%;
+      padding: 11px;
+      background: #1976d2;
       color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
     }
+    #export-btn:hover:not(:disabled) { background: #1565c0; }
+    #export-btn:disabled { background: #bdbdbd; cursor: not-allowed; }
 
-    .preview-row {
-      display: flex; border-top: 1px solid #f0f2f5;
+    #log {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #888;
+      font-family: monospace;
+      line-height: 1.8;
+      display: none;
     }
-
-    .preview-cell {
-      flex: 1; padding: 3px 8px; font-size: 9px; color: #57606a;
-      border-right: 1px solid #f0f2f5; white-space: nowrap; overflow: hidden;
-    }
-
-    .preview-cell.hdr { background: #f6f8fa; font-weight: 600; color: #24292f; }
-    .preview-cell.num { text-align: right; }
-    .preview-spacer { height: 8px; background: repeating-linear-gradient(90deg,#f6f8fa 0px,#f6f8fa 8px,transparent 8px,transparent 16px); }
-
-    /* Worksheet list */
-    .ws-list { display: flex; flex-direction: column; gap: 6px; }
-
-    .ws-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 8px; padding: 10px 12px;
-      display: flex; align-items: center; gap: 10px;
-      transition: border-color 0.2s;
-    }
-    .ws-card:hover { border-color: var(--accent); }
-
-    .ws-index {
-      width: 20px; height: 20px; border-radius: 4px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0;
-    }
-
-    .ws-name { flex: 1; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-    .ws-badge {
-      font-size: 10px; font-family: 'DM Mono', monospace;
-      color: var(--text-dim); background: var(--surface2);
-      border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; white-space: nowrap;
-    }
-    .ws-badge.loaded  { color: var(--success); border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.08); }
-    .ws-badge.fetching{ color: var(--warning); border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.08); }
-    .ws-badge.error   { color: var(--error);   border-color: rgba(239,68,68,0.3);  background: rgba(239,68,68,0.08); }
-
-    /* Options */
-    .options-panel {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 10px; padding: 14px;
-      display: flex; flex-direction: column; gap: 10px;
-    }
-    .option-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-    .option-label { font-size: 13px; color: var(--text-muted); }
-
-    .toggle { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
-    .toggle input { opacity: 0; width: 0; height: 0; }
-    .toggle-slider {
-      position: absolute; inset: 0;
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 20px; cursor: pointer; transition: background 0.2s, border-color 0.2s;
-    }
-    .toggle-slider::before {
-      content: ''; position: absolute; width: 14px; height: 14px;
-      left: 2px; top: 2px; background: var(--text-dim);
-      border-radius: 50%; transition: transform 0.2s, background 0.2s;
-    }
-    .toggle input:checked + .toggle-slider { background: rgba(79,124,255,0.2); border-color: var(--accent); }
-    .toggle input:checked + .toggle-slider::before { transform: translateX(16px); background: var(--accent); }
-
-    .filename-input {
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 6px; color: var(--text);
-      font-family: 'DM Mono', monospace; font-size: 12px;
-      padding: 6px 10px; flex: 1; min-width: 0; outline: none;
-      transition: border-color 0.2s;
-    }
-    .filename-input:focus { border-color: var(--accent); }
-
-    /* Separator style picker */
-    .seg-control {
-      display: flex; background: var(--surface2);
-      border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
-    }
-    .seg-btn {
-      flex: 1; padding: 5px 8px; font-size: 11px; color: var(--text-muted);
-      background: transparent; border: none; cursor: pointer;
-      font-family: 'DM Sans', sans-serif; transition: background 0.15s, color 0.15s;
-    }
-    .seg-btn.active { background: var(--accent); color: #fff; }
-
-    /* Export button */
-    .export-btn {
-      width: 100%; padding: 13px;
-      background: linear-gradient(135deg, var(--accent) 0%, #7c3aed 100%);
-      border: none; border-radius: 10px; color: #fff;
-      font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700;
-      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
-      box-shadow: 0 4px 24px var(--accent-glow);
-      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
-      position: relative; overflow: hidden;
-    }
-    .export-btn:not(:disabled):hover { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 6px 32px var(--accent-glow); }
-    .export-btn:not(:disabled):active { transform: translateY(0); }
-    .export-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
-    .btn-shimmer {
-      position: absolute; inset: 0;
-      background: linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.12) 50%,transparent 100%);
-      transform: translateX(-100%);
-    }
-    .export-btn:not(:disabled):hover .btn-shimmer { animation: shimmer 0.7s ease; }
-    @keyframes shimmer { to { transform: translateX(100%); } }
-
-    /* Progress */
-    .progress-wrap { background: var(--surface2); border-radius: 4px; height: 4px; overflow: hidden; display: none; }
-    .progress-wrap.active { display: block; }
-    .progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), #7c3aed); border-radius: 4px; transition: width 0.3s ease; }
-
-    /* Log */
-    .log-box {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 10px; padding: 10px 12px; max-height: 120px; overflow-y: auto; display: none;
-    }
-    .log-box.active { display: block; }
-    .log-line { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-dim); line-height: 1.7; }
-    .log-line.ok   { color: var(--success); }
-    .log-line.err  { color: var(--error); }
-    .log-line.info { color: var(--accent); }
-
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    #log.show { display: block; }
+    .log-ok  { color: #4caf50; }
+    .log-err { color: #f44336; }
+    .log-info{ color: #1976d2; }
   </style>
 </head>
 <body>
 
-  <div class="header">
-    <div class="header-icon">📊</div>
-    <div class="header-text">
-      <h1>Dashboard Exporter</h1>
-      <p>All charts → One Excel Sheet</p>
-    </div>
-  </div>
+  <h2>📊 Dashboard Exporter</h2>
 
-  <div class="content">
+  <div id="status">Connecting to Tableau…</div>
 
-    <!-- Status -->
-    <div class="status-banner">
-      <div class="status-dot loading" id="statusDot"></div>
-      <div class="status-text" id="statusText">Connecting to Tableau…</div>
-    </div>
+  <div id="ws-list"></div>
 
-    <!-- Preview diagram — shows the single-sheet stacking concept -->
-    <div class="preview-card" id="previewCard" style="display:none;">
-      <div class="section-label">Output Structure</div>
-      <div class="preview-sheet">
-        <div class="preview-tab-bar">
-          <div class="preview-tab active">Dashboard_Export.xlsx</div>
-        </div>
-        <!-- Section 1 -->
-        <div class="preview-section-header" style="background:#4f7cff;">
-          <span>▶</span><span id="prev-ws1">Sales by Region</span>
-        </div>
-        <div class="preview-row">
-          <div class="preview-cell hdr">Region</div>
-          <div class="preview-cell hdr num">Sales</div>
-          <div class="preview-cell hdr num">Profit</div>
-        </div>
-        <div class="preview-row">
-          <div class="preview-cell">East</div>
-          <div class="preview-cell num">$124,500</div>
-          <div class="preview-cell num">$18,200</div>
-        </div>
-        <div class="preview-row">
-          <div class="preview-cell">West</div>
-          <div class="preview-cell num">$98,300</div>
-          <div class="preview-cell num">$14,100</div>
-        </div>
-        <!-- spacer -->
-        <div class="preview-spacer"></div>
-        <!-- Section 2 -->
-        <div class="preview-section-header" style="background:#22c55e;">
-          <span>▶</span><span id="prev-ws2">Monthly Trend</span>
-        </div>
-        <div class="preview-row">
-          <div class="preview-cell hdr">Month</div>
-          <div class="preview-cell hdr num">Orders</div>
-          <div class="preview-cell hdr num">Revenue</div>
-        </div>
-        <div class="preview-row">
-          <div class="preview-cell">Jan 2024</div>
-          <div class="preview-cell num">342</div>
-          <div class="preview-cell num">$41,200</div>
-        </div>
-        <div class="preview-row" style="opacity:0.5;">
-          <div class="preview-cell">Feb 2024</div>
-          <div class="preview-cell num">…</div>
-          <div class="preview-cell num">…</div>
-        </div>
-        <!-- spacer -->
-        <div class="preview-spacer"></div>
-        <div class="preview-section-header" style="background:#f59e0b;">
-          <span>▶</span><span>More worksheets below…</span>
-        </div>
-      </div>
-    </div>
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
 
-    <!-- Worksheet list -->
-    <div id="worksheetsSection" style="display:none;">
-      <div class="section-label">Worksheets to export</div>
-      <div class="ws-list" id="worksheetsList"></div>
-    </div>
+  <button id="export-btn" disabled onclick="runExport()">Export to Excel</button>
 
-    <!-- Options -->
-    <div class="options-panel" id="optionsPanel" style="display:none;">
-      <div class="section-label" style="margin-bottom:0;">Export Options</div>
-
-      <div class="option-row">
-        <span class="option-label">Filename</span>
-        <input class="filename-input" id="filenameInput" type="text" value="dashboard_export" maxlength="80" />
-      </div>
-
-      <div class="option-row">
-        <span class="option-label">Section separator rows</span>
-        <div class="seg-control">
-          <button class="seg-btn" data-val="1" onclick="setSep(this)">1</button>
-          <button class="seg-btn active" data-val="2" onclick="setSep(this)">2</button>
-          <button class="seg-btn" data-val="3" onclick="setSep(this)">3</button>
-        </div>
-      </div>
-
-      <div class="option-row">
-        <span class="option-label">Section header rows</span>
-        <label class="toggle">
-          <input type="checkbox" id="showSectionHeader" checked />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-
-      <div class="option-row">
-        <span class="option-label">Bold column headers</span>
-        <label class="toggle">
-          <input type="checkbox" id="boldHeaders" checked />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-
-      <div class="option-row">
-        <span class="option-label">Add filter summary at top</span>
-        <label class="toggle">
-          <input type="checkbox" id="filterSummary" checked />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-
-      <div class="option-row">
-        <span class="option-label">Auto-fit column widths</span>
-        <label class="toggle">
-          <input type="checkbox" id="autoFit" checked />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    </div>
-
-    <!-- Progress -->
-    <div class="progress-wrap" id="progressWrap">
-      <div class="progress-bar" id="progressBar" style="width:0%"></div>
-    </div>
-
-    <!-- Export button -->
-    <button class="export-btn" id="exportBtn" disabled onclick="runExport()">
-      <div class="btn-shimmer"></div>
-      <span id="exportBtnIcon">⬇</span>
-      <span id="exportBtnText">Export to Excel</span>
-    </button>
-
-    <!-- Log -->
-    <div class="log-box" id="logBox"></div>
-
-  </div>
+  <div id="log"></div>
 
 <script>
-// ─── State ───────────────────────────────────────────────────
-let dashboard = null;
+'use strict';
+
+// ── State ──────────────────────────────────────────────────────────────
 let worksheets = [];
-let separatorRows = 2;
-const COLORS = ['4f7cff','22c55e','f59e0b','a855f7','ec4899','14b8a6','f97316','06b6d4'];
+let dashboardName = '';
 
-// ─── Init ────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  // Check if SDK even loaded
-  if (typeof tableau === 'undefined') {
-    setStatus('error', 'Tableau SDK failed to load — check network/console');
-    return;
-  }
+// ── DOM refs ───────────────────────────────────────────────────────────
+const statusEl   = document.getElementById('status');
+const wsList     = document.getElementById('ws-list');
+const progressWrap = document.getElementById('progress-wrap');
+const progressBar  = document.getElementById('progress-bar');
+const exportBtn  = document.getElementById('export-btn');
+const logEl      = document.getElementById('log');
 
-  tableau.extensions.initializeAsync()
-    .then(onInit)
-    .catch(err => {
-      setStatus('error', 'Init failed: ' + err.message);
-      // Also log full error
-      log('ERROR: ' + JSON.stringify(err), 'err');
-      log('Stack: ' + err.stack, 'err');
-      document.getElementById('logBox').classList.add('active');
-    });
-});
-
-function onInit() {
-  dashboard = tableau.extensions.dashboardContent.dashboard;
-  worksheets = dashboard.worksheets;
-
-  if (!worksheets || worksheets.length === 0) {
-    setStatus('error', 'No worksheets found on this dashboard');
-    return;
-  }
-
-  setStatus('ready',
-    `Connected · <strong>${dashboard.name}</strong> · ${worksheets.length} worksheet${worksheets.length !== 1 ? 's' : ''} → 1 sheet`
-  );
-
-  // Update preview labels
-  if (worksheets[0]) document.getElementById('prev-ws1').textContent = worksheets[0].name;
-  if (worksheets[1]) document.getElementById('prev-ws2').textContent = worksheets[1].name;
-
-  renderWorksheetList();
-  document.getElementById('previewCard').style.display = 'block';
-  document.getElementById('worksheetsSection').style.display = 'block';
-  document.getElementById('optionsPanel').style.display = 'block';
-  document.getElementById('exportBtn').disabled = false;
-}
-
-// ─── UI helpers ──────────────────────────────────────────────
-function setStatus(type, html) {
-  document.getElementById('statusDot').className = 'status-dot ' + type;
-  document.getElementById('statusText').innerHTML = html;
-}
-
-function setSep(btn) {
-  document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  separatorRows = parseInt(btn.dataset.val);
-}
-
-function renderWorksheetList() {
-  const list = document.getElementById('worksheetsList');
-  list.innerHTML = '';
-  worksheets.forEach((ws, i) => {
-    const color = COLORS[i % COLORS.length];
-    list.innerHTML += `
-      <div class="ws-card">
-        <div class="ws-index" style="background:#${color};">${i + 1}</div>
-        <div class="ws-name">${ws.name}</div>
-        <div class="ws-badge" id="wsbadge-${i}">waiting</div>
-      </div>`;
-  });
-}
-
-function updateBadge(i, state, label) {
-  const el = document.getElementById('wsbadge-' + i);
-  if (!el) return;
-  const defaults = { waiting:'waiting', fetching:'fetching…', error:'error' };
-  el.className = 'ws-badge ' + state;
-  el.textContent = label || defaults[state] || state;
+// ── Helpers ────────────────────────────────────────────────────────────
+function setStatus(msg, type = '') {
+  statusEl.textContent = msg;
+  statusEl.className = type;
 }
 
 function setProgress(pct) {
-  document.getElementById('progressBar').style.width = pct + '%';
+  progressBar.style.width = pct + '%';
 }
 
 function log(msg, type = '') {
-  const box = document.getElementById('logBox');
-  box.classList.add('active');
+  logEl.classList.add('show');
   const line = document.createElement('div');
-  line.className = 'log-line ' + type;
+  if (type) line.className = 'log-' + type;
   line.textContent = '› ' + msg;
-  box.appendChild(line);
-  box.scrollTop = box.scrollHeight;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
 }
 
 function clearLog() {
-  const box = document.getElementById('logBox');
-  box.innerHTML = '';
-  box.classList.remove('active');
+  logEl.innerHTML = '';
+  logEl.classList.remove('show');
 }
 
-// ─── Utility: encode a cell address ─────────────────────────
-function enc(r, c) { return XLSX.utils.encode_cell({ r, c }); }
-
-// ─── Utility: apply cell style (SheetJS CE supports limited styles via !styles) ─
-function setCellStyle(ws, r, c, style) {
-  const addr = enc(r, c);
-  if (!ws[addr]) ws[addr] = { t: 's', v: '' };
-  ws[addr].s = style;
+function setState(wsIndex, state, label) {
+  const row = document.getElementById('ws-row-' + wsIndex);
+  if (!row) return;
+  const stateEl = row.querySelector('.ws-state');
+  stateEl.className = 'ws-state ' + state;
+  stateEl.textContent = label;
 }
 
-// ─── Main export ─────────────────────────────────────────────
-async function runExport() {
-  const btn = document.getElementById('exportBtn');
-  btn.disabled = true;
-  document.getElementById('exportBtnIcon').textContent = '⏳';
-  document.getElementById('exportBtnText').textContent = 'Exporting…';
-  document.getElementById('progressWrap').classList.add('active');
-  clearLog();
-  setProgress(0);
-
-  const boldHeaders    = document.getElementById('boldHeaders').checked;
-  const showSection    = document.getElementById('showSectionHeader').checked;
-  const filterSummary  = document.getElementById('filterSummary').checked;
-  const autoFit        = document.getElementById('autoFit').checked;
-
-  // ── Build one big AOA (array of arrays) ──────────────────
-  // We'll also track styling info separately (row index → type)
-  const aoa = [];           // all rows
-  const styleMap = [];      // parallel array: styleMap[rowIdx] = { type, colorHex, colCount }
-  let totalRows = 0;
-  let maxCols = 0;
-
-  // ── A. Optional: filter summary block at very top ─────────
-  if (filterSummary) {
-    aoa.push([`Dashboard: ${dashboard.name}`]);
-    styleMap.push({ type: 'meta' });
-    aoa.push([`Exported: ${new Date().toLocaleString()}`]);
-    styleMap.push({ type: 'meta' });
-    aoa.push(['Worksheet', 'Filter Field', 'Applied Values']);
-    styleMap.push({ type: 'filterHdr' });
-    // placeholder — we'll fill filter rows below
+// ── Init ───────────────────────────────────────────────────────────────
+window.onload = function () {
+  // Safety check — if SDK didn't load
+  if (typeof tableau === 'undefined') {
+    setStatus('ERROR: tableau.extensions SDK not found. Make sure tableau.extensions.1.latest.js is in the same folder as index.html.', 'error');
+    return;
   }
 
-  const filterPlaceholderStart = aoa.length; // remember where filter rows go
-  const filterPlaceholderRows = [];          // will push rows here & splice in later
+  tableau.extensions.initializeAsync().then(function () {
+    const dashboard = tableau.extensions.dashboardContent.dashboard;
+    dashboardName   = dashboard.name;
+    worksheets      = dashboard.worksheets;
 
-  const step = filterSummary ? 85 / worksheets.length : 90 / worksheets.length;
+    if (!worksheets || worksheets.length === 0) {
+      setStatus('No worksheets found on this dashboard.', 'error');
+      return;
+    }
 
-  // ── B. Loop worksheets ────────────────────────────────────
+    setStatus('Ready · ' + dashboardName + ' · ' + worksheets.length + ' sheet(s)', 'ok');
+
+    // Render worksheet list
+    wsList.style.display = 'block';
+    worksheets.forEach(function (ws, i) {
+      const row = document.createElement('div');
+      row.className = 'ws-row';
+      row.id = 'ws-row-' + i;
+      row.innerHTML = '<span class="ws-name">' + ws.name + '</span><span class="ws-state">waiting</span>';
+      wsList.appendChild(row);
+    });
+
+    exportBtn.disabled = false;
+
+  }, function (err) {
+    setStatus('Init failed: ' + (err && err.message ? err.message : String(err)), 'error');
+    log('Full error: ' + JSON.stringify(err), 'err');
+    logEl.classList.add('show');
+  });
+};
+
+// ── Export ─────────────────────────────────────────────────────────────
+async function runExport() {
+  exportBtn.disabled = true;
+  exportBtn.textContent = 'Exporting…';
+  clearLog();
+  progressWrap.style.display = 'block';
+  setProgress(0);
+
+  const aoa       = [];   // all rows as array-of-arrays
+  const styleMap  = [];   // parallel metadata for styling
+  let totalRows   = 0;
+  let maxCols     = 0;
+  const COLORS    = ['4472C4','70AD47','ED7D31','A9D18E','FF0000','4BACC6','9DC3E6','FFC000'];
+
+  // ── Meta header ───────────────────────────────────────────────────
+  aoa.push(['Dashboard: ' + dashboardName]);   styleMap.push({ type: 'meta' });
+  aoa.push(['Exported:  ' + new Date().toLocaleString()]); styleMap.push({ type: 'meta' });
+  aoa.push([]); styleMap.push({ type: 'spacer' });
+
+  const step = 90 / worksheets.length;
+
+  // ── Loop worksheets ───────────────────────────────────────────────
   for (let i = 0; i < worksheets.length; i++) {
-    const ws = worksheets[i];
+    const ws    = worksheets[i];
     const color = COLORS[i % COLORS.length];
-    log(`Fetching: ${ws.name}`, 'info');
-    updateBadge(i, 'fetching');
+    log('Fetching: ' + ws.name, 'info');
+    setState(i, 'busy', 'fetching…');
 
-    // Separator blank rows between sections (skip before first)
-    if (aoa.length > (filterSummary ? filterPlaceholderStart : 0)) {
-      for (let s = 0; s < separatorRows; s++) {
-        aoa.push([]);
-        styleMap.push({ type: 'spacer' });
-      }
+    // Separator between sections (skip before first)
+    if (i > 0) {
+      aoa.push([]); styleMap.push({ type: 'spacer' });
+      aoa.push([]); styleMap.push({ type: 'spacer' });
     }
 
     try {
-      const dataTable = await ws.getSummaryDataAsync();
-      const columns   = dataTable.columns;
-      const rows      = dataTable.data;
-      const colCount  = columns.length;
+      // ── Use modern paginated reader (deprecated getSummaryDataAsync replaced) ──
+      const reader = await ws.getSummaryDataReaderAsync();
+      const columns = reader.columns || [];
+      const colCount = columns.length;
       if (colCount > maxCols) maxCols = colCount;
 
       // Section header row
-      if (showSection) {
-        aoa.push([ws.name]);
-        styleMap.push({ type: 'section', colorHex: color, colCount });
-      }
+      aoa.push([ws.name]);
+      styleMap.push({ type: 'section', color, colCount });
 
       // Column header row
-      const header = columns.map(c => c.fieldName);
-      aoa.push(header);
-      styleMap.push({ type: 'colHeader', colorHex: color, colCount });
+      aoa.push(columns.map(function (c) { return c.fieldName; }));
+      styleMap.push({ type: 'colHeader', color, colCount });
 
-      // Data rows
-      for (const row of rows) {
-        const dataRow = row.map(cell => {
-          const v = cell.value;
-          if (v === null || v === undefined || v === '%null%') return '';
-          if (cell.nativeValue !== undefined && cell.nativeValue !== null) {
-            return typeof cell.nativeValue === 'object' ? v : cell.nativeValue;
-          }
-          return v;
-        });
-        aoa.push(dataRow);
-        styleMap.push({ type: 'data' });
-      }
-
-      totalRows += rows.length;
-      updateBadge(i, 'loaded', `${rows.length.toLocaleString()} rows`);
-      log(`✓ ${ws.name} — ${rows.length.toLocaleString()} rows, ${colCount} cols`, 'ok');
-
-      // Collect filters for summary
-      if (filterSummary) {
-        try {
-          const filters = await ws.getFiltersAsync();
-          if (filters.length > 0) {
-            for (const f of filters) {
-              let vals = '(all)';
-              if (f.filterType === 'categorical' && f.appliedValues?.length > 0) {
-                vals = f.appliedValues.map(v => v.value).join(', ');
-              } else if (f.filterType === 'range') {
-                vals = `${f.minValue?.value ?? '?'} → ${f.maxValue?.value ?? '?'}`;
+      // Read all pages
+      let wsRowCount = 0;
+      try {
+        for (let p = 0; p < reader.pageCount; p++) {
+          const page = await reader.getPageAsync(p);
+          for (const row of page.data) {
+            aoa.push(row.map(function (cell) {
+              if (cell.value === null || cell.value === undefined || cell.value === '%null%') return '';
+              if (cell.nativeValue !== undefined && cell.nativeValue !== null) {
+                return typeof cell.nativeValue === 'object' ? cell.value : cell.nativeValue;
               }
-              filterPlaceholderRows.push([ws.name, f.fieldName, vals]);
-            }
-          } else {
-            filterPlaceholderRows.push([ws.name, '(none)', '—']);
+              return cell.value;
+            }));
+            styleMap.push({ type: 'data' });
+            wsRowCount++;
           }
-        } catch (_) {
-          filterPlaceholderRows.push([ws.name, 'error reading filters', '—']);
         }
+      } finally {
+        await reader.releaseAsync();
       }
+
+      totalRows += wsRowCount;
+      setState(i, 'done', wsRowCount.toLocaleString() + ' rows');
+      log('✓ ' + ws.name + ' — ' + wsRowCount.toLocaleString() + ' rows, ' + colCount + ' cols', 'ok');
 
     } catch (wsErr) {
-      updateBadge(i, 'error');
-      log(`✗ ${ws.name} — ${wsErr.message}`, 'err');
-      if (showSection) { aoa.push([ws.name + ' (error)']); styleMap.push({ type:'section', colorHex:'ef4444', colCount:1 }); }
-      aoa.push([wsErr.message]); styleMap.push({ type:'data' });
+      setState(i, 'err', 'error');
+      log('✗ ' + ws.name + ' — ' + wsErr.message, 'err');
+      aoa.push([ws.name + ' — ERROR: ' + wsErr.message]);
+      styleMap.push({ type: 'data' });
     }
 
     setProgress(Math.round((i + 1) * step));
   }
 
-  // ── C. Splice filter rows into placeholder position ───────
-  if (filterSummary && filterPlaceholderRows.length > 0) {
-    // insert after filterPlaceholderStart
-    filterPlaceholderRows.forEach((r, idx) => {
-      aoa.splice(filterPlaceholderStart + idx, 0, r);
-      styleMap.splice(filterPlaceholderStart + idx, 0, { type: 'filterRow' });
-    });
-    // add blank separator after filter block
-    aoa.splice(filterPlaceholderStart + filterPlaceholderRows.length, 0, []);
-    styleMap.splice(filterPlaceholderStart + filterPlaceholderRows.length, 0, { type: 'spacer' });
-  }
+  // ── Build Excel worksheet ─────────────────────────────────────────
+  log('Building Excel file (' + totalRows.toLocaleString() + ' total rows)…', 'info');
+  setProgress(93);
 
-  setProgress(92);
-  log(`Building Excel sheet (${totalRows.toLocaleString()} total rows)…`, 'info');
-
-  // ── D. Convert AOA → worksheet ────────────────────────────
   const xlSheet = XLSX.utils.aoa_to_sheet(aoa);
 
-  // ── E. Apply styles row by row ───────────────────────────
-  styleMap.forEach((meta, r) => {
+  // Apply styles
+  styleMap.forEach(function (meta, r) {
     const colCount = meta.colCount || maxCols || 1;
 
     if (meta.type === 'section') {
-      // Merge across all columns & style as colored banner
       if (!xlSheet['!merges']) xlSheet['!merges'] = [];
       xlSheet['!merges'].push({ s: { r, c: 0 }, e: { r, c: Math.max(colCount - 1, 0) } });
-      const addr = enc(r, 0);
+      const addr = XLSX.utils.encode_cell({ r, c: 0 });
       if (!xlSheet[addr]) xlSheet[addr] = { t: 's', v: '' };
       xlSheet[addr].s = {
         font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
-        fill: { patternType: 'solid', fgColor: { rgb: meta.colorHex.toUpperCase() } },
+        fill: { patternType: 'solid', fgColor: { rgb: meta.color } },
         alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
       };
 
     } else if (meta.type === 'colHeader') {
       for (let c = 0; c < colCount; c++) {
-        const addr = enc(r, c);
+        const addr = XLSX.utils.encode_cell({ r, c });
         if (!xlSheet[addr]) xlSheet[addr] = { t: 's', v: '' };
         xlSheet[addr].s = {
-          font: { bold: boldHeaders, sz: 10, color: { rgb: '1a1d27' } },
-          fill: { patternType: 'solid', fgColor: { rgb: 'E8EDFB' } },
-          border: {
-            bottom: { style: 'medium', color: { rgb: meta.colorHex.toUpperCase() } }
-          },
+          font: { bold: true, sz: 10 },
+          fill: { patternType: 'solid', fgColor: { rgb: 'D9E1F2' } },
+          border: { bottom: { style: 'thin', color: { rgb: meta.color } } },
           alignment: { horizontal: 'left' }
         };
       }
 
-    } else if (meta.type === 'filterHdr') {
-      for (let c = 0; c < 3; c++) {
-        const addr = enc(r, c);
-        if (!xlSheet[addr]) xlSheet[addr] = { t: 's', v: '' };
-        xlSheet[addr].s = {
-          font: { bold: true, sz: 10, color: { rgb: 'FFFFFF' } },
-          fill: { patternType: 'solid', fgColor: { rgb: '2E3350' } }
-        };
-      }
-
     } else if (meta.type === 'meta') {
-      const addr = enc(r, 0);
-      if (xlSheet[addr]) xlSheet[addr].s = { font: { italic: true, color: { rgb: '8892B0' } } };
-
-    } else if (meta.type === 'filterRow') {
-      for (let c = 0; c < 3; c++) {
-        const addr = enc(r, c);
-        if (xlSheet[addr]) xlSheet[addr].s = { font: { sz: 10 }, fill: { patternType: 'solid', fgColor: { rgb: 'F6F8FF' } } };
-      }
+      const addr = XLSX.utils.encode_cell({ r, c: 0 });
+      if (xlSheet[addr]) xlSheet[addr].s = { font: { italic: true, color: { rgb: '888888' }, sz: 9 } };
     }
   });
 
-  // ── F. Auto-fit column widths ─────────────────────────────
-  if (autoFit && aoa.length > 0) {
-    const widths = [];
-    aoa.forEach(row => {
-      row.forEach((cell, ci) => {
-        const len = String(cell ?? '').length;
-        if (!widths[ci] || len > widths[ci]) widths[ci] = len;
-      });
+  // Auto-fit column widths
+  const widths = [];
+  aoa.forEach(function (row) {
+    row.forEach(function (cell, ci) {
+      const len = String(cell ?? '').length;
+      if (!widths[ci] || len > widths[ci]) widths[ci] = len;
     });
-    xlSheet['!cols'] = widths.map(w => ({ wch: Math.min((w || 8) + 2, 60) }));
-  }
-
-  // ── G. Row heights — section headers taller ───────────────
-  const rowHeights = styleMap.map(m => {
-    if (m.type === 'section') return { hpt: 22 };
-    if (m.type === 'filterHdr') return { hpt: 18 };
-    return { hpt: 15 };
   });
-  xlSheet['!rows'] = rowHeights;
+  xlSheet['!cols'] = widths.map(function (w) { return { wch: Math.min((w || 8) + 2, 60) }; });
 
-  // ── H. Write workbook ─────────────────────────────────────
-  const workbook = XLSX.utils.book_new();
-  const sheetName = 'Dashboard Data';
-  XLSX.utils.book_append_sheet(workbook, xlSheet, sheetName);
+  // Row heights
+  xlSheet['!rows'] = styleMap.map(function (m) {
+    return { hpt: m.type === 'section' ? 20 : 15 };
+  });
 
-  setProgress(97);
-  const filename = (document.getElementById('filenameInput').value.trim() || 'dashboard_export') + '.xlsx';
-  XLSX.writeFile(workbook, filename);
+  // Write and download
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, xlSheet, 'Dashboard Data');
+
+  setProgress(98);
+  const filename = dashboardName.replace(/[^a-z0-9_\-]/gi, '_') + '_export.xlsx';
+  XLSX.writeFile(wb, filename);
 
   setProgress(100);
-  log(`✓ Downloaded: ${filename}`, 'ok');
-  setStatus('ready',
-    `Done · <strong>${totalRows.toLocaleString()} rows</strong> · <strong>${worksheets.length} sections</strong> · 1 sheet`
-  );
+  log('✓ Downloaded: ' + filename, 'ok');
+  setStatus('Done · ' + totalRows.toLocaleString() + ' total rows exported', 'ok');
 
-  btn.disabled = false;
-  document.getElementById('exportBtnIcon').textContent = '⬇';
-  document.getElementById('exportBtnText').textContent = 'Export to Excel';
+  exportBtn.disabled = false;
+  exportBtn.textContent = 'Export to Excel';
 }
 </script>
 </body>
