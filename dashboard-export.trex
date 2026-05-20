@@ -7,7 +7,7 @@
     <author name="Dashboard Export Extension" email="support@example.com" organization="Custom Extensions" website="https://example.com" />
     <min-api-version>1.7</min-api-version>
     <source-location>
-      <url>REPLACE_WITH_YOUR_HOSTED_URL/index.html</url>
+      <url>https://piyushsharma-greyb.github.io/tableau-exporter/</url>
     </source-location>
     <icon>iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH4wEPDTMTHpCxSwAAAB1pVFh0Q29tbWVudAAAAAAAQ3JlYXRlZCB3aXRoIEdJTVBkLmUHAAAAZklEQVQ4y2NgGAWDHPz//5+BkgYwMDAwMGAzgIGBgYERm+GUGIBuEFYXMBBvCBZXkGsAuisYcBiCywBchmA1AJ8hBA3AZQhOA3AZgtcAXIYQNACXITgNwGUIXgNwGULQAFyG4DQAAAD//2Q4UJuFKbUAAAAASUVORK5CYII=</icon>
     <permissions>
