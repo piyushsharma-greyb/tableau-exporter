@@ -50,93 +50,80 @@
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.45);
+      background: rgba(0,0,0,0.35);
       z-index: 100;
       align-items: center;
       justify-content: center;
     }
     #overlay.show { display: flex; }
 
-    /* ── Modal ── */
+    /* ── Compact inline modal ── */
     #modal {
       background: #fff;
-      border-radius: 8px;
-      width: 300px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.22);
-      overflow: hidden;
+      border-radius: 6px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      white-space: nowrap;
     }
 
-    .modal-header {
-      padding: 14px 16px 10px;
-      border-bottom: 1px solid #e0e0e0;
+    /* Type checkboxes inline */
+    .type-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
-    .modal-header h3 { font-size: 14px; font-weight: 700; color: #111; margin-bottom: 3px; }
-    .modal-header p  { font-size: 11px; color: #777; }
-
-    /* Type rows */
-    #type-list { padding: 8px 0; }
 
     .type-item {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 9px 16px;
+      gap: 5px;
       cursor: pointer;
-      transition: background 0.1s;
-    }
-    .type-item:hover { background: #f5f8ff; }
-
-    .type-item input[type="checkbox"] {
-      width: 15px; height: 15px;
-      accent-color: #1976d2;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-
-    .type-label {
-      flex: 1;
-    }
-    .type-label strong {
-      display: block;
       font-size: 13px;
       color: #222;
-      font-weight: 600;
+      font-weight: 500;
     }
-    .type-label span {
-      font-size: 11px;
-      color: #888;
-    }
-
-    .modal-footer {
-      padding: 10px 16px;
-      border-top: 1px solid #e0e0e0;
-      display: flex;
-      gap: 8px;
-      justify-content: flex-end;
-    }
-    .btn-cancel {
-      padding: 7px 16px;
-      background: #fff;
-      color: #555;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-      font-size: 12px;
-      font-weight: 600;
+    .type-item input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      accent-color: #1976d2;
       cursor: pointer;
     }
-    .btn-cancel:hover { background: #f5f5f5; }
+
+    /* Divider */
+    .divider {
+      width: 1px;
+      height: 20px;
+      background: #ddd;
+    }
+
+    /* Confirm button */
     .btn-confirm {
-      padding: 7px 16px;
+      padding: 6px 14px;
       background: #1976d2;
       color: #fff;
       border: none;
-      border-radius: 5px;
+      border-radius: 4px;
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
     }
     .btn-confirm:hover { background: #1565c0; }
     .btn-confirm:disabled { background: #90a4ae; cursor: not-allowed; }
+
+    /* Cancel (x) */
+    .btn-x {
+      background: none;
+      border: none;
+      font-size: 16px;
+      color: #aaa;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .btn-x:hover { color: #555; }
   </style>
 </head>
 <body>
@@ -144,22 +131,14 @@
   <button id="export-btn" disabled onclick="openModal()">Export to Excel</button>
   <span id="msg"></span>
 
-  <!-- Type selection modal -->
   <div id="overlay">
     <div id="modal">
-      <div class="modal-header">
-        <h3>Select Product Types</h3>
-        <p>Choose which numbered types to include across all sections.</p>
+      <div class="type-row" id="type-row">
+        <!-- checkboxes injected here -->
       </div>
-
-      <div id="type-list">
-        <!-- populated by JS once worksheets are known -->
-      </div>
-
-      <div class="modal-footer">
-        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-        <button class="btn-confirm" id="confirm-btn" onclick="confirmExport()" disabled>Export</button>
-      </div>
+      <div class="divider"></div>
+      <button class="btn-confirm" id="confirm-btn" onclick="confirmExport()" disabled>Export</button>
+      <button class="btn-x" onclick="closeModal()">✕</button>
     </div>
   </div>
 
@@ -168,12 +147,12 @@
 
 let worksheets    = [];
 let dashboardName = '';
-let availableNums = []; // e.g. [1, 2, 3] — discovered from actual worksheet names
+let availableNums = [];
 
 const exportBtn  = document.getElementById('export-btn');
 const msgEl      = document.getElementById('msg');
 const overlay    = document.getElementById('overlay');
-const typeList   = document.getElementById('type-list');
+const typeRow    = document.getElementById('type-row');
 const confirmBtn = document.getElementById('confirm-btn');
 
 function setMsg(text, type) {
@@ -182,7 +161,6 @@ function setMsg(text, type) {
   msgEl.style.display = text ? 'inline' : 'none';
 }
 
-// ─── Header / skip detection ───────────────────────────────────────────────
 const HEADER_MAP = {
   'header'       : ['Claim Type',      'Claim Type',      'Claim'],
   'packheader'   : ['Packaging Type',  'Packaging Type',  'Packaging'],
@@ -204,14 +182,11 @@ function shouldSkip(wsName) {
   return lo.startsWith('reset') || lo.startsWith('fs ') || lo === 'fs';
 }
 
-// ─── Extract trailing number from a worksheet name ─────────────────────────
-// "Claims 1" → 1,  "Ingr. 2" → 2,  "Packaging 3" → 3,  "Header" → null
 function trailingNum(wsName) {
   const m = wsName.trim().match(/(\d+)\s*$/);
   return m ? parseInt(m[1], 10) : null;
 }
 
-// ─── Init ──────────────────────────────────────────────────────────────────
 window.onload = function () {
   if (typeof tableau === 'undefined') {
     setMsg('SDK not loaded', 'error');
@@ -222,7 +197,6 @@ window.onload = function () {
     dashboardName = db.name;
     worksheets    = db.worksheets;
 
-    // Discover all unique trailing numbers from data worksheets
     const numSet = new Set();
     worksheets.forEach(function (ws) {
       if (shouldSkip(ws.name) || detectHeader(ws.name)) return;
@@ -232,13 +206,11 @@ window.onload = function () {
     availableNums = Array.from(numSet).sort(function (a, b) { return a - b; });
 
     exportBtn.disabled = false;
-
   }, function (err) {
     setMsg('Init failed: ' + (err && err.message ? err.message : String(err)), 'error');
   });
 };
 
-// ─── Fetch all rows (paginated) ────────────────────────────────────────────
 async function fetchAllRows(ws) {
   const reader  = await ws.getSummaryDataReaderAsync();
   const allRows = [];
@@ -261,89 +233,50 @@ async function fetchAllRows(ws) {
   return allRows;
 }
 
-// ─── Modal ─────────────────────────────────────────────────────────────────
-// Friendly labels for each number slot
-const TYPE_LABELS = {
-  1: 'Product Type 1',
-  2: 'Product Type 2',
-  3: 'Product Type 3',
-};
-
-// Sub-sheet names shown as hint, built dynamically from actual ws names
-function sheetsForNum(n) {
-  return worksheets
-    .filter(function (ws) { return !shouldSkip(ws.name) && !detectHeader(ws.name) && trailingNum(ws.name) === n; })
-    .map(function (ws) { return ws.name; })
-    .join(', ');
-}
-
 function openModal() {
-  // If no numbered types found, skip modal and export everything
-  if (availableNums.length === 0) {
-    runExport(null);
-    return;
-  }
+  if (availableNums.length === 0) { runExport(null); return; }
 
-  typeList.innerHTML = '';
-
+  typeRow.innerHTML = '';
   availableNums.forEach(function (n) {
-    const item = document.createElement('div');
+    const item = document.createElement('label');
     item.className = 'type-item';
 
     const chk = document.createElement('input');
     chk.type    = 'checkbox';
-    chk.id      = 'chk-type-' + n;
     chk.value   = n;
     chk.checked = true;
     chk.addEventListener('change', updateConfirmState);
 
-    const lbl = document.createElement('div');
-    lbl.className = 'type-label';
-    lbl.innerHTML =
-      '<strong>' + (TYPE_LABELS[n] || 'Type ' + n) + '</strong>' +
-      '<span>' + sheetsForNum(n) + '</span>';
-
-    // Click anywhere on row toggles checkbox
-    item.addEventListener('click', function (e) {
-      if (e.target !== chk) { chk.checked = !chk.checked; updateConfirmState(); }
-    });
-
     item.appendChild(chk);
-    item.appendChild(lbl);
-    typeList.appendChild(item);
+    item.appendChild(document.createTextNode('Product ' + n));
+    typeRow.appendChild(item);
   });
 
   updateConfirmState();
   overlay.classList.add('show');
 }
 
-function closeModal() {
-  overlay.classList.remove('show');
-}
+function closeModal() { overlay.classList.remove('show'); }
 
 function updateConfirmState() {
-  const any = typeList.querySelectorAll('input[type="checkbox"]:checked').length > 0;
+  const any = typeRow.querySelectorAll('input:checked').length > 0;
   confirmBtn.disabled = !any;
 }
 
 function confirmExport() {
-  const checked = Array.from(typeList.querySelectorAll('input[type="checkbox"]:checked'))
-                       .map(function (chk) { return parseInt(chk.value, 10); });
+  const checked = Array.from(typeRow.querySelectorAll('input:checked'))
+                       .map(function (c) { return parseInt(c.value, 10); });
   closeModal();
-  // If all numbers are selected, pass null (no filter = include all)
   const filter = checked.length === availableNums.length ? null : new Set(checked);
   runExport(filter);
 }
 
-// ─── Export ────────────────────────────────────────────────────────────────
 async function runExport(numFilter) {
-  // numFilter: Set of numbers to include (e.g. Set{1,2}), or null = all
   exportBtn.disabled = true;
   exportBtn.textContent = 'Exporting…';
   setMsg('', '');
 
   try {
-    // Group worksheets into sections
     const sections = [];
     let current = null;
     worksheets.forEach(function (ws) {
@@ -353,11 +286,8 @@ async function runExport(numFilter) {
         current = { meta: headerMeta, sheets: [] };
         sections.push(current);
       } else if (current) {
-        // Only include this sheet if its trailing number is in the filter
         const n = trailingNum(ws.name);
-        if (numFilter === null || numFilter.has(n)) {
-          current.sheets.push(ws);
-        }
+        if (numFilter === null || numFilter.has(n)) current.sheets.push(ws);
       } else {
         const n = trailingNum(ws.name);
         if (numFilter === null || numFilter.has(n)) {
@@ -367,7 +297,6 @@ async function runExport(numFilter) {
       }
     });
 
-    // Remove empty sections (all sheets filtered out)
     const activeSections = sections.filter(function (s) { return s.sheets.length > 0; });
 
     const aoa      = [];
@@ -404,7 +333,6 @@ async function runExport(numFilter) {
       }
     }
 
-    // Build sheet
     const xlSheet = XLSX.utils.aoa_to_sheet(aoa);
 
     styleMap.forEach(function (meta, r) {
@@ -436,10 +364,7 @@ async function runExport(numFilter) {
         for (let c = 0; c < 4; c++) {
           const cell = a(c);
           if (xlSheet[cell]) {
-            xlSheet[cell].s = {
-              font: { sz: 10 },
-              alignment: { wrapText: true, vertical: 'top' }
-            };
+            xlSheet[cell].s = { font: { sz: 10 }, alignment: { wrapText: true, vertical: 'top' } };
           }
         }
       }
@@ -457,9 +382,7 @@ async function runExport(numFilter) {
     const filterNote = numFilter ? '_type' + Array.from(numFilter).sort().join('_') : '';
     XLSX.writeFile(wb, safeName + filterNote + '.xlsx', { bookType: 'xlsx' });
 
-    const label = numFilter
-      ? 'Exported · Type ' + Array.from(numFilter).sort().join(', ')
-      : 'Exported · All types';
+    const label = numFilter ? 'Exported · Type ' + Array.from(numFilter).sort().join(', ') : 'Exported';
     setMsg(label, 'ok');
 
   } catch (err) {
