@@ -10,6 +10,7 @@
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: transparent;
@@ -20,6 +21,7 @@
       height: 100vh;
     }
 
+    /* ── Main button ── */
     #export-btn {
       padding: 8px 20px;
       background: #1976d2;
@@ -43,30 +45,202 @@
     }
     #msg.ok    { color: #2e7d32; display: inline; }
     #msg.error { color: #c62828; display: inline; }
-    #msg.info  { color: #1565c0; display: inline; }
+    #msg.info  { color: #1976d2; display: inline; }
+
+    /* ── Overlay backdrop ── */
+    #overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    #overlay.show { display: flex; }
+
+    /* ── Modal ── */
+    #modal {
+      background: #fff;
+      border-radius: 8px;
+      width: 320px;
+      max-height: 480px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.22);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .modal-header h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #111;
+      margin-bottom: 4px;
+    }
+    .modal-header p {
+      font-size: 11px;
+      color: #777;
+    }
+
+    /* Search box */
+    #product-search {
+      margin: 10px 16px 4px;
+      padding: 6px 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 12px;
+      outline: none;
+      width: calc(100% - 32px);
+    }
+    #product-search:focus { border-color: #1976d2; }
+
+    /* Select all row */
+    .select-all-row {
+      padding: 6px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+    }
+    .select-all-row label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #333;
+      cursor: pointer;
+    }
+
+    /* Product list */
+    #product-list {
+      overflow-y: auto;
+      flex: 1;
+      padding: 4px 0;
+    }
+    .product-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 16px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .product-item:hover { background: #f5f8ff; }
+    .product-item input[type="checkbox"] {
+      width: 14px; height: 14px;
+      accent-color: #1976d2;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .product-item label {
+      font-size: 12px;
+      color: #333;
+      cursor: pointer;
+      line-height: 1.3;
+    }
+    .product-item.hidden { display: none; }
+
+    /* Count badge */
+    #selected-count {
+      font-size: 11px;
+      color: #1976d2;
+      padding: 4px 16px 6px;
+      border-top: 1px solid #f0f0f0;
+    }
+
+    /* Modal footer */
+    .modal-footer {
+      padding: 10px 16px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .btn-cancel {
+      padding: 7px 16px;
+      background: #fff;
+      color: #555;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-cancel:hover { background: #f5f5f5; }
+    .btn-confirm {
+      padding: 7px 16px;
+      background: #1976d2;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-confirm:hover { background: #1565c0; }
+    .btn-confirm:disabled { background: #90a4ae; cursor: not-allowed; }
   </style>
 </head>
 <body>
 
-  <button id="export-btn" disabled onclick="runExport()">Export to Excel</button>
+  <button id="export-btn" disabled onclick="openModal()">Export to Excel</button>
   <span id="msg"></span>
+
+  <!-- Product selection modal -->
+  <div id="overlay">
+    <div id="modal">
+      <div class="modal-header">
+        <h3>Select Products to Export</h3>
+        <p>Only checked products will be included in the Excel file.</p>
+      </div>
+
+      <input id="product-search" type="text" placeholder="Search products…" oninput="filterSearch()" />
+
+      <div class="select-all-row" onclick="toggleSelectAll()">
+        <input type="checkbox" id="chk-all" onchange="toggleSelectAll()" />
+        <label for="chk-all">Select / Deselect All</label>
+      </div>
+
+      <div id="product-list">
+        <!-- populated by JS -->
+      </div>
+
+      <div id="selected-count">0 products selected</div>
+
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-confirm" id="confirm-btn" onclick="confirmExport()" disabled>Export</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 'use strict';
 
 let worksheets    = [];
 let dashboardName = '';
+let allProducts   = [];   // sorted unique product names discovered from first data sheet
+let selectedProducts = new Set();
 
-const exportBtn = document.getElementById('export-btn');
-const msgEl     = document.getElementById('msg');
+const exportBtn   = document.getElementById('export-btn');
+const msgEl       = document.getElementById('msg');
+const overlay     = document.getElementById('overlay');
+const productList = document.getElementById('product-list');
+const confirmBtn  = document.getElementById('confirm-btn');
+const chkAll      = document.getElementById('chk-all');
+const countEl     = document.getElementById('selected-count');
 
+// ─── Helpers ───────────────────────────────────────────────────────────────
 function setMsg(text, type) {
   msgEl.className = type || '';
   msgEl.textContent = text;
-  if (text) msgEl.style.display = 'inline'; else msgEl.style.display = 'none';
+  msgEl.style.display = text ? 'inline' : 'none';
 }
 
-// ─── Header sheet detection (same logic as before) ──────────────────────────
+// ─── Header / skip detection (unchanged) ──────────────────────────────────
 const HEADER_MAP = {
   'header'       : ['Claim Type',      'Claim Type',      'Claim'],
   'packheader'   : ['Packaging Type',  'Packaging Type',  'Packaging'],
@@ -83,8 +257,6 @@ function detectHeader(wsName) {
   return null;
 }
 
-// ─── Skip non-data sheets (Reset 1/2/3, FS 1/2/3, etc.) ───────────────────
-// Any sheet whose name starts with "Reset" or "FS" (case-insensitive) is skipped.
 function shouldSkip(wsName) {
   const lo = wsName.toLowerCase().trim();
   return lo.startsWith('reset') || lo.startsWith('fs ') || lo === 'fs';
@@ -96,17 +268,39 @@ window.onload = function () {
     setMsg('SDK not loaded', 'error');
     return;
   }
-  tableau.extensions.initializeAsync().then(function () {
+  tableau.extensions.initializeAsync().then(async function () {
     const db      = tableau.extensions.dashboardContent.dashboard;
     dashboardName = db.name;
     worksheets    = db.worksheets;
+
+    // Discover unique product names from first non-header, non-skip data sheet
+    // Product name is always column 0 in every data worksheet
+    try {
+      const firstDataWs = worksheets.find(function (ws) {
+        return !shouldSkip(ws.name) && !detectHeader(ws.name);
+      });
+      if (firstDataWs) {
+        const rows = await fetchAllRows(firstDataWs);
+        const names = new Set();
+        rows.forEach(function (row) {
+          const name = String(row[0] || '').trim();
+          if (name && name !== '') names.add(name);
+        });
+        allProducts = Array.from(names).sort();
+      }
+    } catch (e) {
+      // If product discovery fails, export will still work (no filter applied)
+      allProducts = [];
+    }
+
     exportBtn.disabled = false;
+
   }, function (err) {
     setMsg('Init failed: ' + (err && err.message ? err.message : String(err)), 'error');
   });
 };
 
-// ─── Fetch all rows from a worksheet (paginated) ───────────────────────────
+// ─── Fetch all rows (paginated) ────────────────────────────────────────────
 async function fetchAllRows(ws) {
   const reader = await ws.getSummaryDataReaderAsync();
   const allRows = [];
@@ -129,8 +323,98 @@ async function fetchAllRows(ws) {
   return allRows;
 }
 
+// ─── Modal open / close ────────────────────────────────────────────────────
+function openModal() {
+  // If no products discovered, skip modal and export everything
+  if (allProducts.length === 0) {
+    runExport(null); // null = no filter
+    return;
+  }
+
+  // Build checklist
+  productList.innerHTML = '';
+  selectedProducts = new Set(allProducts); // default: all selected
+
+  allProducts.forEach(function (name) {
+    const item = document.createElement('div');
+    item.className = 'product-item';
+    item.dataset.name = name.toLowerCase();
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.id   = 'chk-' + name;
+    chk.checked = true;
+    chk.addEventListener('change', function () {
+      if (chk.checked) selectedProducts.add(name);
+      else             selectedProducts.delete(name);
+      updateCount();
+    });
+
+    const lbl = document.createElement('label');
+    lbl.htmlFor = 'chk-' + name;
+    lbl.textContent = name;
+
+    item.appendChild(chk);
+    item.appendChild(lbl);
+
+    // Clicking the row (not just the checkbox) toggles it
+    item.addEventListener('click', function (e) {
+      if (e.target !== chk) chk.click();
+    });
+
+    productList.appendChild(item);
+  });
+
+  document.getElementById('product-search').value = '';
+  chkAll.checked = true;
+  updateCount();
+  overlay.classList.add('show');
+}
+
+function closeModal() {
+  overlay.classList.remove('show');
+}
+
+// ─── Select all toggle ─────────────────────────────────────────────────────
+function toggleSelectAll() {
+  const shouldCheck = chkAll.checked;
+  productList.querySelectorAll('.product-item:not(.hidden) input[type="checkbox"]').forEach(function (chk) {
+    chk.checked = shouldCheck;
+    const name = chk.id.replace('chk-', '');
+    if (shouldCheck) selectedProducts.add(name);
+    else             selectedProducts.delete(name);
+  });
+  updateCount();
+}
+
+// ─── Search filter ─────────────────────────────────────────────────────────
+function filterSearch() {
+  const q = document.getElementById('product-search').value.toLowerCase().trim();
+  productList.querySelectorAll('.product-item').forEach(function (item) {
+    const match = item.dataset.name.includes(q);
+    item.classList.toggle('hidden', !match);
+  });
+}
+
+// ─── Count badge + confirm button state ───────────────────────────────────
+function updateCount() {
+  const n = selectedProducts.size;
+  countEl.textContent = n + ' product' + (n !== 1 ? 's' : '') + ' selected';
+  confirmBtn.disabled = n === 0;
+  // Sync select-all checkbox state
+  chkAll.checked = n === allProducts.length;
+  chkAll.indeterminate = n > 0 && n < allProducts.length;
+}
+
+// ─── Confirm → kick off export ─────────────────────────────────────────────
+function confirmExport() {
+  closeModal();
+  runExport(selectedProducts.size === allProducts.length ? null : selectedProducts);
+}
+
 // ─── Export ────────────────────────────────────────────────────────────────
-async function runExport() {
+async function runExport(productFilter) {
+  // productFilter: Set of product names to include, or null = include all
   exportBtn.disabled = true;
   exportBtn.textContent = 'Exporting…';
   setMsg('', '');
@@ -139,10 +423,8 @@ async function runExport() {
     // Group worksheets into sections
     const sections = [];
     let current = null;
-
     worksheets.forEach(function (ws) {
-      if (shouldSkip(ws.name)) return; // skip Reset/FS sheets entirely
-
+      if (shouldSkip(ws.name)) return;
       const headerMeta = detectHeader(ws.name);
       if (headerMeta) {
         current = { meta: headerMeta, sheets: [] };
@@ -157,7 +439,6 @@ async function runExport() {
 
     const aoa      = [];
     const styleMap = [];
-
     const TITLE_COLORS = ['1F4E79', '375623', '7B2C2C', '3E3072'];
     const HDR_FILLS    = ['D6E4F0', 'E2EFDA', 'FCE4D6', 'EDE7F6'];
 
@@ -184,13 +465,17 @@ async function runExport() {
           const product  = row[0] !== undefined ? row[0] : '';
           const subField = row[1] !== undefined ? row[1] : '';
           const value    = row[2] !== undefined ? row[2] : '';
+
+          // Apply product filter
+          if (productFilter && !productFilter.has(String(product).trim())) continue;
+
           aoa.push([product, ws.name, subField, value]);
           styleMap.push({ type: 'data' });
         }
       }
     }
 
-    // Build sheet
+    // Build SheetJS worksheet
     const xlSheet = XLSX.utils.aoa_to_sheet(aoa);
 
     styleMap.forEach(function (meta, r) {
@@ -239,11 +524,11 @@ async function runExport() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, xlSheet, 'Dashboard Data');
 
-    // Clean filename — strip special chars, append .xlsx explicitly
     const safeName = dashboardName.replace(/[^a-z0-9_\-]/gi, '_');
     XLSX.writeFile(wb, safeName + '.xlsx', { bookType: 'xlsx' });
 
-    setMsg('Exported!', 'ok');
+    const filterNote = productFilter ? ' (' + productFilter.size + ' products)' : '';
+    setMsg('Exported!' + filterNote, 'ok');
 
   } catch (err) {
     setMsg('Error: ' + err.message, 'error');
