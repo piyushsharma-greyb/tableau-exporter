@@ -21,7 +21,6 @@
       height: 100vh;
     }
 
-    /* ── Main button ── */
     #export-btn {
       padding: 8px 20px;
       background: #1976d2;
@@ -45,9 +44,8 @@
     }
     #msg.ok    { color: #2e7d32; display: inline; }
     #msg.error { color: #c62828; display: inline; }
-    #msg.info  { color: #1976d2; display: inline; }
 
-    /* ── Overlay backdrop ── */
+    /* ── Overlay ── */
     #overlay {
       display: none;
       position: fixed;
@@ -63,10 +61,7 @@
     #modal {
       background: #fff;
       border-radius: 8px;
-      width: 320px;
-      max-height: 480px;
-      display: flex;
-      flex-direction: column;
+      width: 300px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.22);
       overflow: hidden;
     }
@@ -75,83 +70,43 @@
       padding: 14px 16px 10px;
       border-bottom: 1px solid #e0e0e0;
     }
-    .modal-header h3 {
-      font-size: 14px;
-      font-weight: 700;
-      color: #111;
-      margin-bottom: 4px;
-    }
-    .modal-header p {
-      font-size: 11px;
-      color: #777;
-    }
+    .modal-header h3 { font-size: 14px; font-weight: 700; color: #111; margin-bottom: 3px; }
+    .modal-header p  { font-size: 11px; color: #777; }
 
-    /* Search box */
-    #product-search {
-      margin: 10px 16px 4px;
-      padding: 6px 10px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      font-size: 12px;
-      outline: none;
-      width: calc(100% - 32px);
-    }
-    #product-search:focus { border-color: #1976d2; }
+    /* Type rows */
+    #type-list { padding: 8px 0; }
 
-    /* Select all row */
-    .select-all-row {
-      padding: 6px 16px;
+    .type-item {
       display: flex;
       align-items: center;
-      gap: 8px;
-      border-bottom: 1px solid #f0f0f0;
-      cursor: pointer;
-    }
-    .select-all-row label {
-      font-size: 12px;
-      font-weight: 600;
-      color: #333;
-      cursor: pointer;
-    }
-
-    /* Product list */
-    #product-list {
-      overflow-y: auto;
-      flex: 1;
-      padding: 4px 0;
-    }
-    .product-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 16px;
+      gap: 10px;
+      padding: 9px 16px;
       cursor: pointer;
       transition: background 0.1s;
     }
-    .product-item:hover { background: #f5f8ff; }
-    .product-item input[type="checkbox"] {
-      width: 14px; height: 14px;
+    .type-item:hover { background: #f5f8ff; }
+
+    .type-item input[type="checkbox"] {
+      width: 15px; height: 15px;
       accent-color: #1976d2;
       cursor: pointer;
       flex-shrink: 0;
     }
-    .product-item label {
-      font-size: 12px;
-      color: #333;
-      cursor: pointer;
-      line-height: 1.3;
-    }
-    .product-item.hidden { display: none; }
 
-    /* Count badge */
-    #selected-count {
+    .type-label {
+      flex: 1;
+    }
+    .type-label strong {
+      display: block;
+      font-size: 13px;
+      color: #222;
+      font-weight: 600;
+    }
+    .type-label span {
       font-size: 11px;
-      color: #1976d2;
-      padding: 4px 16px 6px;
-      border-top: 1px solid #f0f0f0;
+      color: #888;
     }
 
-    /* Modal footer */
     .modal-footer {
       padding: 10px 16px;
       border-top: 1px solid #e0e0e0;
@@ -189,26 +144,17 @@
   <button id="export-btn" disabled onclick="openModal()">Export to Excel</button>
   <span id="msg"></span>
 
-  <!-- Product selection modal -->
+  <!-- Type selection modal -->
   <div id="overlay">
     <div id="modal">
       <div class="modal-header">
-        <h3>Select Products to Export</h3>
-        <p>Only checked products will be included in the Excel file.</p>
+        <h3>Select Product Types</h3>
+        <p>Choose which numbered types to include across all sections.</p>
       </div>
 
-      <input id="product-search" type="text" placeholder="Search products…" oninput="filterSearch()" />
-
-      <div class="select-all-row" onclick="toggleSelectAll()">
-        <input type="checkbox" id="chk-all" onchange="toggleSelectAll()" />
-        <label for="chk-all">Select / Deselect All</label>
+      <div id="type-list">
+        <!-- populated by JS once worksheets are known -->
       </div>
-
-      <div id="product-list">
-        <!-- populated by JS -->
-      </div>
-
-      <div id="selected-count">0 products selected</div>
 
       <div class="modal-footer">
         <button class="btn-cancel" onclick="closeModal()">Cancel</button>
@@ -222,25 +168,21 @@
 
 let worksheets    = [];
 let dashboardName = '';
-let allProducts   = [];   // sorted unique product names discovered from first data sheet
-let selectedProducts = new Set();
+let availableNums = []; // e.g. [1, 2, 3] — discovered from actual worksheet names
 
-const exportBtn   = document.getElementById('export-btn');
-const msgEl       = document.getElementById('msg');
-const overlay     = document.getElementById('overlay');
-const productList = document.getElementById('product-list');
-const confirmBtn  = document.getElementById('confirm-btn');
-const chkAll      = document.getElementById('chk-all');
-const countEl     = document.getElementById('selected-count');
+const exportBtn  = document.getElementById('export-btn');
+const msgEl      = document.getElementById('msg');
+const overlay    = document.getElementById('overlay');
+const typeList   = document.getElementById('type-list');
+const confirmBtn = document.getElementById('confirm-btn');
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
 function setMsg(text, type) {
   msgEl.className = type || '';
   msgEl.textContent = text;
   msgEl.style.display = text ? 'inline' : 'none';
 }
 
-// ─── Header / skip detection (unchanged) ──────────────────────────────────
+// ─── Header / skip detection ───────────────────────────────────────────────
 const HEADER_MAP = {
   'header'       : ['Claim Type',      'Claim Type',      'Claim'],
   'packheader'   : ['Packaging Type',  'Packaging Type',  'Packaging'],
@@ -262,36 +204,32 @@ function shouldSkip(wsName) {
   return lo.startsWith('reset') || lo.startsWith('fs ') || lo === 'fs';
 }
 
+// ─── Extract trailing number from a worksheet name ─────────────────────────
+// "Claims 1" → 1,  "Ingr. 2" → 2,  "Packaging 3" → 3,  "Header" → null
+function trailingNum(wsName) {
+  const m = wsName.trim().match(/(\d+)\s*$/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 // ─── Init ──────────────────────────────────────────────────────────────────
 window.onload = function () {
   if (typeof tableau === 'undefined') {
     setMsg('SDK not loaded', 'error');
     return;
   }
-  tableau.extensions.initializeAsync().then(async function () {
+  tableau.extensions.initializeAsync().then(function () {
     const db      = tableau.extensions.dashboardContent.dashboard;
     dashboardName = db.name;
     worksheets    = db.worksheets;
 
-    // Discover unique product names from first non-header, non-skip data sheet
-    // Product name is always column 0 in every data worksheet
-    try {
-      const firstDataWs = worksheets.find(function (ws) {
-        return !shouldSkip(ws.name) && !detectHeader(ws.name);
-      });
-      if (firstDataWs) {
-        const rows = await fetchAllRows(firstDataWs);
-        const names = new Set();
-        rows.forEach(function (row) {
-          const name = String(row[0] || '').trim();
-          if (name && name !== '') names.add(name);
-        });
-        allProducts = Array.from(names).sort();
-      }
-    } catch (e) {
-      // If product discovery fails, export will still work (no filter applied)
-      allProducts = [];
-    }
+    // Discover all unique trailing numbers from data worksheets
+    const numSet = new Set();
+    worksheets.forEach(function (ws) {
+      if (shouldSkip(ws.name) || detectHeader(ws.name)) return;
+      const n = trailingNum(ws.name);
+      if (n !== null) numSet.add(n);
+    });
+    availableNums = Array.from(numSet).sort(function (a, b) { return a - b; });
 
     exportBtn.disabled = false;
 
@@ -302,7 +240,7 @@ window.onload = function () {
 
 // ─── Fetch all rows (paginated) ────────────────────────────────────────────
 async function fetchAllRows(ws) {
-  const reader = await ws.getSummaryDataReaderAsync();
+  const reader  = await ws.getSummaryDataReaderAsync();
   const allRows = [];
   try {
     for (let p = 0; p < reader.pageCount; p++) {
@@ -323,51 +261,59 @@ async function fetchAllRows(ws) {
   return allRows;
 }
 
-// ─── Modal open / close ────────────────────────────────────────────────────
+// ─── Modal ─────────────────────────────────────────────────────────────────
+// Friendly labels for each number slot
+const TYPE_LABELS = {
+  1: 'Product Type 1',
+  2: 'Product Type 2',
+  3: 'Product Type 3',
+};
+
+// Sub-sheet names shown as hint, built dynamically from actual ws names
+function sheetsForNum(n) {
+  return worksheets
+    .filter(function (ws) { return !shouldSkip(ws.name) && !detectHeader(ws.name) && trailingNum(ws.name) === n; })
+    .map(function (ws) { return ws.name; })
+    .join(', ');
+}
+
 function openModal() {
-  // If no products discovered, skip modal and export everything
-  if (allProducts.length === 0) {
-    runExport(null); // null = no filter
+  // If no numbered types found, skip modal and export everything
+  if (availableNums.length === 0) {
+    runExport(null);
     return;
   }
 
-  // Build checklist
-  productList.innerHTML = '';
-  selectedProducts = new Set(allProducts); // default: all selected
+  typeList.innerHTML = '';
 
-  allProducts.forEach(function (name) {
+  availableNums.forEach(function (n) {
     const item = document.createElement('div');
-    item.className = 'product-item';
-    item.dataset.name = name.toLowerCase();
+    item.className = 'type-item';
 
     const chk = document.createElement('input');
-    chk.type = 'checkbox';
-    chk.id   = 'chk-' + name;
+    chk.type    = 'checkbox';
+    chk.id      = 'chk-type-' + n;
+    chk.value   = n;
     chk.checked = true;
-    chk.addEventListener('change', function () {
-      if (chk.checked) selectedProducts.add(name);
-      else             selectedProducts.delete(name);
-      updateCount();
-    });
+    chk.addEventListener('change', updateConfirmState);
 
-    const lbl = document.createElement('label');
-    lbl.htmlFor = 'chk-' + name;
-    lbl.textContent = name;
+    const lbl = document.createElement('div');
+    lbl.className = 'type-label';
+    lbl.innerHTML =
+      '<strong>' + (TYPE_LABELS[n] || 'Type ' + n) + '</strong>' +
+      '<span>' + sheetsForNum(n) + '</span>';
+
+    // Click anywhere on row toggles checkbox
+    item.addEventListener('click', function (e) {
+      if (e.target !== chk) { chk.checked = !chk.checked; updateConfirmState(); }
+    });
 
     item.appendChild(chk);
     item.appendChild(lbl);
-
-    // Clicking the row (not just the checkbox) toggles it
-    item.addEventListener('click', function (e) {
-      if (e.target !== chk) chk.click();
-    });
-
-    productList.appendChild(item);
+    typeList.appendChild(item);
   });
 
-  document.getElementById('product-search').value = '';
-  chkAll.checked = true;
-  updateCount();
+  updateConfirmState();
   overlay.classList.add('show');
 }
 
@@ -375,46 +321,23 @@ function closeModal() {
   overlay.classList.remove('show');
 }
 
-// ─── Select all toggle ─────────────────────────────────────────────────────
-function toggleSelectAll() {
-  const shouldCheck = chkAll.checked;
-  productList.querySelectorAll('.product-item:not(.hidden) input[type="checkbox"]').forEach(function (chk) {
-    chk.checked = shouldCheck;
-    const name = chk.id.replace('chk-', '');
-    if (shouldCheck) selectedProducts.add(name);
-    else             selectedProducts.delete(name);
-  });
-  updateCount();
+function updateConfirmState() {
+  const any = typeList.querySelectorAll('input[type="checkbox"]:checked').length > 0;
+  confirmBtn.disabled = !any;
 }
 
-// ─── Search filter ─────────────────────────────────────────────────────────
-function filterSearch() {
-  const q = document.getElementById('product-search').value.toLowerCase().trim();
-  productList.querySelectorAll('.product-item').forEach(function (item) {
-    const match = item.dataset.name.includes(q);
-    item.classList.toggle('hidden', !match);
-  });
-}
-
-// ─── Count badge + confirm button state ───────────────────────────────────
-function updateCount() {
-  const n = selectedProducts.size;
-  countEl.textContent = n + ' product' + (n !== 1 ? 's' : '') + ' selected';
-  confirmBtn.disabled = n === 0;
-  // Sync select-all checkbox state
-  chkAll.checked = n === allProducts.length;
-  chkAll.indeterminate = n > 0 && n < allProducts.length;
-}
-
-// ─── Confirm → kick off export ─────────────────────────────────────────────
 function confirmExport() {
+  const checked = Array.from(typeList.querySelectorAll('input[type="checkbox"]:checked'))
+                       .map(function (chk) { return parseInt(chk.value, 10); });
   closeModal();
-  runExport(selectedProducts.size === allProducts.length ? null : selectedProducts);
+  // If all numbers are selected, pass null (no filter = include all)
+  const filter = checked.length === availableNums.length ? null : new Set(checked);
+  runExport(filter);
 }
 
 // ─── Export ────────────────────────────────────────────────────────────────
-async function runExport(productFilter) {
-  // productFilter: Set of product names to include, or null = include all
+async function runExport(numFilter) {
+  // numFilter: Set of numbers to include (e.g. Set{1,2}), or null = all
   exportBtn.disabled = true;
   exportBtn.textContent = 'Exporting…';
   setMsg('', '');
@@ -430,20 +353,30 @@ async function runExport(productFilter) {
         current = { meta: headerMeta, sheets: [] };
         sections.push(current);
       } else if (current) {
-        current.sheets.push(ws);
+        // Only include this sheet if its trailing number is in the filter
+        const n = trailingNum(ws.name);
+        if (numFilter === null || numFilter.has(n)) {
+          current.sheets.push(ws);
+        }
       } else {
-        current = { meta: ['Data', 'Type', 'Field'], sheets: [ws] };
-        sections.push(current);
+        const n = trailingNum(ws.name);
+        if (numFilter === null || numFilter.has(n)) {
+          current = { meta: ['Data', 'Type', 'Field'], sheets: [ws] };
+          sections.push(current);
+        }
       }
     });
+
+    // Remove empty sections (all sheets filtered out)
+    const activeSections = sections.filter(function (s) { return s.sheets.length > 0; });
 
     const aoa      = [];
     const styleMap = [];
     const TITLE_COLORS = ['1F4E79', '375623', '7B2C2C', '3E3072'];
     const HDR_FILLS    = ['D6E4F0', 'E2EFDA', 'FCE4D6', 'EDE7F6'];
 
-    for (let si = 0; si < sections.length; si++) {
-      const section    = sections[si];
+    for (let si = 0; si < activeSections.length; si++) {
+      const section    = activeSections[si];
       const titleColor = TITLE_COLORS[si % TITLE_COLORS.length];
       const hdrFill    = HDR_FILLS[si % HDR_FILLS.length];
       const [tableTitle, col1Label, col2Label] = section.meta;
@@ -465,17 +398,13 @@ async function runExport(productFilter) {
           const product  = row[0] !== undefined ? row[0] : '';
           const subField = row[1] !== undefined ? row[1] : '';
           const value    = row[2] !== undefined ? row[2] : '';
-
-          // Apply product filter
-          if (productFilter && !productFilter.has(String(product).trim())) continue;
-
           aoa.push([product, ws.name, subField, value]);
           styleMap.push({ type: 'data' });
         }
       }
     }
 
-    // Build SheetJS worksheet
+    // Build sheet
     const xlSheet = XLSX.utils.aoa_to_sheet(aoa);
 
     styleMap.forEach(function (meta, r) {
@@ -524,11 +453,14 @@ async function runExport(productFilter) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, xlSheet, 'Dashboard Data');
 
-    const safeName = dashboardName.replace(/[^a-z0-9_\-]/gi, '_');
-    XLSX.writeFile(wb, safeName + '.xlsx', { bookType: 'xlsx' });
+    const safeName   = dashboardName.replace(/[^a-z0-9_\-]/gi, '_');
+    const filterNote = numFilter ? '_type' + Array.from(numFilter).sort().join('_') : '';
+    XLSX.writeFile(wb, safeName + filterNote + '.xlsx', { bookType: 'xlsx' });
 
-    const filterNote = productFilter ? ' (' + productFilter.size + ' products)' : '';
-    setMsg('Exported!' + filterNote, 'ok');
+    const label = numFilter
+      ? 'Exported · Type ' + Array.from(numFilter).sort().join(', ')
+      : 'Exported · All types';
+    setMsg(label, 'ok');
 
   } catch (err) {
     setMsg('Error: ' + err.message, 'error');
